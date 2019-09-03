@@ -25,17 +25,12 @@
 #include "kpix_left_and_right.h"
 #include "TBFunctions.h"
 
-//~LoCo 08/08 histogram (TODO: optimize)
+//~LoCo 08/08 histogram
 #include "TH1F.h"
 #include "TFile.h"
 #include "TTree.h"
 #include "TObject.h"
-
-
-//~LoCo 08/08 histogram (TODO: optimize)
-#include "TH1F.h"
 #include "TCanvas.h"
-#include "TFile.h"
 #include "TRandom.h"
 #include "TF1.h"
 #define maxlength 5000
@@ -44,7 +39,7 @@
 double smallest_time_diff( vector<double> ext_list, int int_value);
 double RotateStrip(double strip, int sensor);
 	
-//~LoCo 12/09
+//~LoCo 12/08
 std::string timestamp_milli_seconds();
 
 namespace eudaq{
@@ -84,6 +79,10 @@ public:
 
 
 private:
+	//~Loco 13/08
+	TFile* _file;
+	TH1F* _histo;
+
 	int getStdPlaneID(uint kpix) const;
 	int getStdKpixID(uint hitX, int planeID) const;
 	int createMap(const char* filename);//~LoCo 05/08
@@ -98,8 +97,10 @@ private:
 	int                       _numofkpix = 24;
 	unordered_map<uint, uint> _lkpix2strip = kpix_left();
 	unordered_map<uint, uint> _rkpix2strip = kpix_right();
+
 	//~LoCo 05/08: can call map in monitor with .at
 	//std::map<std::pair<int,int>, double> m_calib_map = createMap("/home/lorenzo/data/real_calib/calib_normalgain.txt");
+
 	mutable std::map<std::pair<int,int>, double> m_calib_map;
 
 	mutable bool m_isSelfTrig;
@@ -177,9 +178,23 @@ kpixRawEvent2StdEventConverter::kpixRawEvent2StdEventConverter() {
 
 
 	delete rFile;
+
+
+	//~LoCo 12/08 Test histogram for testing
+	auto outRoot =  timestamp_milli_seconds();
+	outRoot = "./TEST_MEWU/TEST_" + outRoot + "_histo.root";
+	_file = new TFile(outRoot.c_str(),"recreate");
+	_histo = new TH1F("histo","No algorithms applied; Charge [fC]; #entries",80,-2, 2);
+	TH1::AddDirectory(kFALSE);
+
 }
 
-kpixRawEvent2StdEventConverter::~kpixRawEvent2StdEventConverter(){}
+kpixRawEvent2StdEventConverter::~kpixRawEvent2StdEventConverter(){
+_file->cd();
+	_histo->Write();
+	_file->Close();
+	delete _file;
+}
 
 
 
@@ -194,7 +209,7 @@ bool kpixRawEvent2StdEventConverter::Converting(eudaq::EventSPC d1, eudaq::StdEv
 	
 	// TODO: currently is hard coded to change trigger mode
 	//string triggermode = d1->GetTag("triggermode", "internal");
-	string triggermode = "internal";
+	string triggermode = "external";
 	m_isSelfTrig = triggermode == "internal" ? true:false ;
 
 	
@@ -322,6 +337,7 @@ void kpixRawEvent2StdEventConverter::parseFrame(eudaq::StdEventSP d2, KpixEvent 
 			if ( m_sampleDB.count( std::make_pair(hit.kpix, hit.channel) ) ){
 				
 				double charge_corr_ped = hit.charge - m_sampleDB[std::make_pair(hit.kpix, hit.channel)].median;
+				//double charge_corr_ped = hit.charge;
 				m_sampleDB[std::make_pair(hit.kpix, hit.channel)].charge = charge_corr_ped;
 				m_KpixChargeList_perCycle[hit.kpix].push_back(charge_corr_ped);
 			}
@@ -363,19 +379,21 @@ void kpixRawEvent2StdEventConverter::parseFrame(eudaq::StdEventSP d2, KpixEvent 
 			else strip = RotateStrip(strip, planeID);
 			
 			//~MQ: correct common mode noise
-			//double charge_corr_CM = entry.second.charge - m_common_mode_perCycle.at(kpix);
-			double charge_corr_CM = entry.second.charge;
+			double charge_corr_CM = entry.second.charge - m_common_mode_perCycle.at(kpix);
+			//double charge_corr_CM = entry.second.charge;
 			// TODO: plot  with cluster_analysis.cxx output :
 			// - noise
 			// - charge_corr_CM
 			// temperarily ignore S/N but use a harsh charge level cut
 			
-			//if (charge_corr_CM > 0 ){
-			//if ( charge_corr_CM > 3*entry.second.noise ){
+			//if (charge_corr_CM > -50 ){
+			//if ( charge_corr_CM > 4*entry.second.noise ){
 			if (true){
 			  std::cout << "[+] plane : "<< planeID << ", hitX at : " << strip << std::endl;
 			  auto &plane = d2->GetPlane( getStdPlaneID(kpix) );
 			  plane.PushPixel(1 , strip, 1);
+			//~LoCo 31/08 test histogram
+			if(planeID==2 && strip==619) _histo->Fill(charge_corr_CM);
 			}
 			                        
 		}
